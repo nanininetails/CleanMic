@@ -1119,10 +1119,4 @@ class CleanMicGUI(QMainWindow):
 
         # VU meters
         self._update_meters(raw_data, clean_data)
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = CleanMicGUI()
-    window.show()
-    sys.exit(app.exec())
+        
