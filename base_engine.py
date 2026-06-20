@@ -1,0 +1,116 @@
+import logging
+import queue
+
+import numpy as np
+import scipy.io.wavfile as wavfile
+import sounddevice as sd
+
+logger = logging.getLogger(__name__)
+
+
+class BaseAudioEngine:
+    """
+    Shared foundation for all audio engines.
+    Owns all recording state, visual queue, and stream lifecycle.
+    Subclasses must implement: _audio_callback, start_stream (for engine-specific setup).
+    """
+
+    def __init__(self):
+        self.mic_id = None
+        self.speaker_id = None
+        self.virtual_output_id = None
+        self.stream = None
+        self.monitor_stream = None
+        self.is_running = False
+        self.is_engaged = False
+        self.loopback_active = False
+
+        self.sample_rate = 48000
+        self.chunk_size = 4096
+
+        self.output_gain_db = 0.0
+        self.output_gain = 1.0
+
+        self.is_recording = False
+        self.record_path = ""
+        self.record_buffer = []
+
+        self.visual_queue = queue.Queue(maxsize=15)
+
+    def stop_and_save_recording(self):
+        """Stop recording and flush buffer to disk."""
+        self.is_recording = False
+        if self.record_buffer and self.record_path:
+            try:
+                full_audio = np.concatenate(self.record_buffer)
+                wavfile.write(self.record_path, self.sample_rate, full_audio)
+                logger.info("File saved: %s", self.record_path)
+            except OSError as e:
+                logger.warning("Failed to save recording: %s", e)
+        else:
+            logger.info("Nothing to save.")
+        self.record_buffer = []
+
+    def _push_to_visual_queue(self, raw: np.ndarray, clean: np.ndarray):
+        if self.visual_queue.full():
+            try:
+                self.visual_queue.get_nowait()
+            except queue.Empty:
+                pass
+        try:
+            self.visual_queue.put_nowait((raw, clean))
+        except queue.Full:
+            pass
+
+    def start_stream(self):
+        self.is_running = True
+        if not self.is_recording:
+            self.record_buffer = []
+
+        self.stream = sd.Stream(
+            device=(self.mic_id, self.virtual_output_id),
+            samplerate=self.sample_rate,
+            channels=1,
+            blocksize=self.chunk_size,
+            dtype=np.float32,
+            callback=self._audio_callback,
+        )
+        self.stream.start()
+        if self.speaker_id is not None:
+            self.monitor_stream = sd.OutputStream(
+                device=self.speaker_id,
+                samplerate=self.sample_rate,
+                channels=2,
+                dtype=np.float32,
+                blocksize=self.chunk_size,
+            )
+            self.monitor_stream.start()
+
+    def _write_monitor(self, audio: np.ndarray):
+        if not self.loopback_active:
+            return
+
+        if not self.monitor_stream:
+            return
+
+        try:
+            stereo_audio = np.column_stack((audio, audio)).astype(np.float32)
+            self.monitor_stream.write(stereo_audio)
+        except Exception as e:
+            logger.warning(f"Monitor stream write error: {e}")
+
+    def stop_stream(self):
+        self.is_running = False
+        if self.is_recording:
+            self.stop_and_save_recording()
+        if self.monitor_stream:
+            self.monitor_stream.stop()
+            self.monitor_stream.close()
+            self.monitor_stream = None
+        if self.stream:
+            self.stream.stop()
+            self.stream.close()
+            self.stream = None          
+
+    def _audio_callback(self, indata, outdata, frames, time, status):
+        raise NotImplementedError
