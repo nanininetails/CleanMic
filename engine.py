@@ -53,11 +53,14 @@ class AudioEngine(BaseAudioEngine):
         # Guard: pass audio through unprocessed when not engaged
         if not self.is_engaged:
             raw = indata[:, 0].copy()
-            outdata[:] = indata
-            self._write_monitor(raw)
+            gained_audio = np.clip(indata * self.output_gain, -1.0,1.0).astype(np.float32)
+            outdata[:] = gained_audio
+
+            gained_raw = gained_audio[:,0].copy()
+            self._write_monitor(gained_raw)
             if self.is_recording:
-                self.record_buffer.append(raw.copy())      
-            self._push_to_visual_queue(raw, raw)
+                self.record_buffer.append(gained_raw)      
+            self._push_to_visual_queue(raw, gained_raw)
             return
 
         raw_audio = indata[:, 0]
@@ -73,11 +76,14 @@ class AudioEngine(BaseAudioEngine):
                 self.is_calibrating = False
                 self.calibration_complete = True
 
-            outdata[:] = indata
-            self._write_monitor(raw_audio)
+            gained_audio = np.clip(indata * self.output_gain, -1.0, 1.0).astype(np.float32)
+            outdata[:] = gained_audio
+
+            gained_raw = gained_audio[:,0].copy()
+            self._write_monitor(gained_raw)
             if self.is_recording:
-                self.record_buffer.append(raw_audio.copy())
-            self._push_to_visual_queue(raw_audio, raw_audio)
+                self.record_buffer.append(gained_raw)
+            self._push_to_visual_queue(raw_audio, gained_raw)
             return
 
         # --- PHASE 2: ACTIVE SCRUBBING ---

@@ -1,5 +1,6 @@
 import logging
-
+import sys
+import os
 import numpy as np
 import scipy.signal as signal
 import torch
@@ -32,7 +33,11 @@ class AudioEngine(BaseAudioEngine):
         self.atten_lim_db = None
 
         logger.info("Booting DeepFilterNet AI... (Loading PyTorch Models)")
-        self.model, self.df_state, _ = init_df()
+        if getattr(sys, 'frozen', False):
+            model_base_dir = os.path.join(sys._MEIPASS, 'DeepFilterNet3')
+        else:
+            model_base_dir = None
+        self.model, self.df_state, _ = init_df(model_base_dir=model_base_dir)
         logger.info("DeepFilterNet Ready.")
 
     # ------------------------------------------------------------------
@@ -50,11 +55,14 @@ class AudioEngine(BaseAudioEngine):
         # Guard: pass audio through unprocessed when not engaged
         if not self.is_engaged:
             raw = indata[:, 0].copy()
-            outdata[:] = indata
-            self._write_monitor(raw)
+            gained_audio = np.clip(indata * self.output_gain,-1.0,1.0).astype(np.float32)
+            outdata[:] = gained_audio
+
+            gained_raw = gained_audio[:,0].copy()
+            self._write_monitor(gained_raw)
             if self.is_recording:
-                self.record_buffer.append(raw.copy())
-            self._push_to_visual_queue(raw, raw)
+                self.record_buffer.append(gained_raw)
+            self._push_to_visual_queue(raw, gained_raw)
             return
 
         raw_audio = indata[:, 0].copy()
