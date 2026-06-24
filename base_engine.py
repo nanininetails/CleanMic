@@ -4,6 +4,7 @@ import queue
 import numpy as np
 import scipy.io.wavfile as wavfile
 import sounddevice as sd
+from scipy import signal
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,15 @@ class BaseAudioEngine:
 
         self.output_gain_db = 0.0
         self.output_gain = 1.0
+
+        # Post-processing filters
+        shelf_b, shelf_a = self._make_high_shelf(7000, 2.5, self.sample_rate)
+        self.shelf_b, self.shelf_a = shelf_b, shelf_a
+        self.shelf_zi = signal.lfilter_zi(shelf_b, shelf_a)
+
+        peak_b, peak_a = self._make_peaking_eq(3500, 1.5, 1.5, self.sample_rate)
+        self.peak_b, self.peak_a = peak_b, peak_a
+        self.peak_zi = signal.lfilter_zi(peak_b, peak_a)
 
         self.is_recording = False
         self.record_path = ""
@@ -111,6 +121,44 @@ class BaseAudioEngine:
             self.stream.stop()
             self.stream.close()
             self.stream = None          
+
+    @staticmethod
+    def _make_high_shelf(freq, gain_db, fs):
+        from scipy import signal
+        A = 10 ** (gain_db / 40)
+        w0 = 2 * np.pi * freq / fs
+        cos_w0 = np.cos(w0)
+        sin_w0 = np.sin(w0)
+        alpha = sin_w0 / 2 * np.sqrt((A + 1/A) * (1/0.9 - 1) + 2)
+        b0 =      A*((A+1) + (A-1)*cos_w0 + 2*np.sqrt(A)*alpha)
+        b1 = -2*A*((A-1) + (A+1)*cos_w0)
+        b2 =      A*((A+1) + (A-1)*cos_w0 - 2*np.sqrt(A)*alpha)
+        a0 =         (A+1) - (A-1)*cos_w0 + 2*np.sqrt(A)*alpha
+        a1 =    2*( (A-1) - (A+1)*cos_w0)
+        a2 =         (A+1) - (A-1)*cos_w0 - 2*np.sqrt(A)*alpha
+        return np.array([b0,b1,b2])/a0, np.array([1, a1/a0, a2/a0])
+
+    @staticmethod
+    def _make_peaking_eq(freq, gain_db, Q, fs):
+        from scipy import signal
+        A = 10 ** (gain_db / 40)
+        w0 = 2 * np.pi * freq / fs
+        alpha = np.sin(w0) / (2 * Q)
+        b0 =   1 + alpha*A
+        b1 =  -2 * np.cos(w0)
+        b2 =   1 - alpha*A
+        a0 =   1 + alpha/A
+        a1 =  -2 * np.cos(w0)
+        a2 =   1 - alpha/A
+        return np.array([b0,b1,b2])/a0, np.array([1, a1/a0, a2/a0])
+
+    def _apply_post_processing(self, audio: np.ndarray) -> np.ndarray:
+        from scipy import signal
+        # High shelf — presence recovery
+        audio, self.shelf_zi = signal.lfilter(self.shelf_b, self.shelf_a, audio, zi=self.shelf_zi)
+        # Peaking EQ — crispness
+        audio, self.peak_zi = signal.lfilter(self.peak_b, self.peak_a, audio, zi=self.peak_zi)
+        return audio.astype(np.float32)
 
     def _audio_callback(self, indata, outdata, frames, time, status):
         raise NotImplementedError

@@ -23,7 +23,7 @@ class AudioEngine(BaseAudioEngine):
 
     def __init__(self):
         super().__init__()
-        self.chunk_size = 8192
+        self.chunk_size = 4096
 
         # High-pass filter (removes sub-120 Hz rumble before neural processing)
         self.b, self.a = signal.butter(4, 120.0, "highpass", fs=self.sample_rate)
@@ -76,6 +76,7 @@ class AudioEngine(BaseAudioEngine):
             audio_tensor = torch.from_numpy(filtered_audio).unsqueeze(0)
             clean_tensor = enhance(self.model, self.df_state, audio_tensor, atten_lim_db = self.atten_lim_db)
             clean_audio = clean_tensor.squeeze().numpy()
+            clean_audio = self._apply_post_processing(clean_audio)
             clean_audio *= self.output_gain
             clean_audio = np.clip(clean_audio, -1.0, 1.0)
 

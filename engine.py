@@ -99,6 +99,7 @@ class AudioEngine(BaseAudioEngine):
                     time_mask_smooth_ms=int(self.word_fade_ms),
                     freq_mask_smooth_hz=int(self.voice_shield_hz),
                 )
+                clean_audio = self._apply_post_processing(clean_audio)
                 clean_audio *= self.output_gain
                 clean_audio = np.clip(clean_audio, -1.0, 1.0)
                 outdata[:] = clean_audio.reshape(-1, 1).astype(np.float32)

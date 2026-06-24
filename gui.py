@@ -13,10 +13,12 @@ from PyQt6.QtWidgets import (
     QHBoxLayout, QLabel, QComboBox, QPushButton,
     QGroupBox, QProgressBar, QCheckBox,
     QFileDialog, QLineEdit, QMenu, QSizePolicy, QGridLayout, QGraphicsDropShadowEffect, QFrame,
+    QSystemTrayIcon, QSlider,
 )
-from PyQt6.QtCore import Qt, QTimer, QSize, QEvent
-from PyQt6.QtGui import QCloseEvent, QIcon, QPixmap, QColor
+from PyQt6.QtCore import Qt, QTimer, QSize, QEvent, QByteArray, QRectF
+from PyQt6.QtGui import QCloseEvent, QIcon, QPixmap, QColor, QPainter
 from PyQt6.QtSvgWidgets import QSvgWidget
+from PyQt6.QtSvg import QSvgRenderer
 
 from constants import (
     EngineType, ProfileKey, PRESET_MAP, CORE_PRESETS,
@@ -41,6 +43,7 @@ from styles import (
     RECORD_BTN_IDLE_QSS, RECORD_BTN_ACTIVE_QSS,
     DRAWER_TOGGLE_BTN_QSS,METER_TRACK_QSS, METER_LABEL_QSS, METER_READOUT_QSS,
     GAIN_SLIDER_QSS, BOTTOM_BAR_QSS, ENGAGE_PANEL_QSS, CHART_SEPARATOR_QSS,
+    APP_ICON_PATH, SVG_TEMPLATE
 )
 from widgets import CustomTitleBar, ProfileSlotWidget, AdvancedTuningDrawer, PeakMeterBar, AccentDivider
 
@@ -99,8 +102,20 @@ class CleanMicGUI(QMainWindow):
         self.timer.start(VISUAL_TIMER_MS)
 
         self._set_initial_position()
+        
+        self._setup_system_tray()
+
+        self._last_icon_state = None
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if not getattr(self, "_is_actually_quitting", False):
+            event.ignore()
+            self.hide()
+            if self.drawer.isVisible():
+                self.drawer.hide()
+            self.tray_icon.showMessage("CleanMic", "Running in background", QSystemTrayIcon.MessageIcon.Information, 2000)
+            return
+
         self.timer.stop()
         if self.drawer.isVisible():
             self.drawer.hide()
@@ -115,6 +130,44 @@ class CleanMicGUI(QMainWindow):
                 self.btn_toggle_drawer.setChecked(True)
                 self.btn_toggle_drawer.setText("▲ Advanced Tuning")
         super().changeEvent(event)
+    
+    def _force_quit(self):
+        self._is_actually_quitting = True
+        self.close()
+
+    # ------------------------------------------------------------------
+    # System Tray and Icon
+    # ------------------------------------------------------------------
+
+    def _generate_state_icon(self, mic_fill_color: str, mic_stroke_color: str, size: int = 48, accent_color: str = '#00D2C4') -> QIcon:
+        svg_xml = SVG_TEMPLATE.format(accent_color = accent_color, mic_fill = mic_fill_color, mic_stroke = mic_stroke_color)
+        renderer = QSvgRenderer(QByteArray(svg_xml.encode('utf-8')))
+
+        pixmap = QPixmap(size,size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+
+        return QIcon(pixmap)
+
+    def _setup_system_tray(self):
+        self._is_actually_quitting = False
+        self.tray_icon = QSystemTrayIcon(self)
+        initial_icon = self._generate_state_icon(mic_fill_color='none', mic_stroke_color='#00D2C4')
+        self.tray_icon.setIcon(initial_icon)
+        self.setWindowIcon(initial_icon)
+
+        tray_menu = QMenu()
+        show_action = tray_menu.addAction("Show App")
+        quit_action = tray_menu.addAction("Quit")
+
+        show_action.triggered.connect(self.show)
+        quit_action.triggered.connect(QApplication.instance().quit)
+
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.show()
 
     # ------------------------------------------------------------------
     # Profile persistence
@@ -235,6 +288,7 @@ class CleanMicGUI(QMainWindow):
 
         self.mic_select.currentIndexChanged.connect(self._restart_hardware_stream)
         self.mon_select.currentIndexChanged.connect(self._restart_hardware_stream)
+        self.vac_select.currentIndexChanged.connect(self._restart_hardware_stream)
         self.loopback_toggle.stateChanged.connect(self._update_loopback)
 
         self._evaluate_ui_states()
@@ -372,6 +426,18 @@ class CleanMicGUI(QMainWindow):
             w.setVisible(False)
             engine_layout.addWidget(w)
 
+        # Adding to protech the height of the buttons (extra security measure)
+        all_profile_buttons = [
+            self.p1_widget, self.p2_widget, self.p3_widget, self.slot1_widget, self.slot2_widget,
+            self.df1_widget, self.df2_widget, self.df3_widget, self.df_placeholder1, self.df_placeholder2
+        ]
+
+        for w in all_profile_buttons:
+            w.setFixedHeight(38)
+
+        # To protect the whole container from squshing down
+        engine_layout.addStretch()
+
         engine_box.setLayout(engine_layout)
         left.addWidget(engine_box)
 
@@ -471,7 +537,6 @@ class CleanMicGUI(QMainWindow):
         return center
 
     def _build_meter_panel(self) -> QVBoxLayout:
-        from PyQt6.QtWidgets import QSlider
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
@@ -526,7 +591,7 @@ class CleanMicGUI(QMainWindow):
         gain_lbl.setGraphicsEffect(self._glow_gain)
 
         self.gain_slider = QSlider(Qt.Orientation.Horizontal)
-        self.gain_slider.setRange(-200, 60)   # -20.0 to +6.0 dB in 0.1 steps
+        self.gain_slider.setRange(-200, 100)   # -20.0 to +6.0 dB in 0.1 steps
         self.gain_slider.setValue(0)
         self.gain_slider.setFixedHeight(10)
         self.gain_slider.setStyleSheet(GAIN_SLIDER_QSS)
@@ -754,7 +819,7 @@ class CleanMicGUI(QMainWindow):
 
         if self.engine:
             if self.engine.is_engaged and self.engine.is_recording:
-                print("Saving tape before engine swap")
+                #print("Saving tape before engine swap")
                 self.engine.stop_and_save_recording()
                 self.locked_recording_engine = None
                 self._set_record_button_state(RecordButtonState.IDLE)
@@ -925,10 +990,12 @@ class CleanMicGUI(QMainWindow):
     def _toggle_drawer(self) -> None:
         if self.drawer.isVisible():
             self.drawer.hide()
+            self.btn_toggle_drawer.setChecked(False)
             self.btn_toggle_drawer.setText("▼ Advanced Tuning")
         else:
             self.drawer.sync_position()
             self.drawer.show()
+            self.btn_toggle_drawer.setChecked(True)
             self.btn_toggle_drawer.setText("▲ Advanced Tuning")
 
     def _start_calibration_overlay(self) -> None:
@@ -974,7 +1041,9 @@ class CleanMicGUI(QMainWindow):
             self._start_calibration_overlay()
             self.master_btn.setText("ACTIVE (SUPPRESSING)")
         else:
-            pass
+            self.master_btn.setText("ENGAGE SUPPRESSION")
+            self._countdown_timer.stop()
+            self.calibration_label.setVisible(False)
 
     def _handle_recording_click(self) -> None:
         if not self.engine:
@@ -1120,3 +1189,31 @@ class CleanMicGUI(QMainWindow):
         # VU meters
         self._update_meters(raw_data, clean_data)
         
+        # Toggling Logic
+        is_recording = getattr(self, "_current_record_state", None) == RecordButtonState.RECORDING
+        is_engine_active = self.engine and self.engine.is_engaged and not is_recording
+
+        accent = "#00D2C4"
+
+        if is_recording:
+            fill_hex = "#FF0000"
+            stroke_hex = "#FF0000"
+        elif is_engine_active:
+            fill_hex = accent
+            stroke_hex = accent
+        else:
+            fill_hex = "none"
+            stroke_hex = accent
+        
+        current_icon_state = (is_recording, is_engine_active)
+        if current_icon_state != self._last_icon_state:
+            tray_icon_asset = self._generate_state_icon(
+                mic_fill_color = fill_hex, mic_stroke_color=stroke_hex, size = 48, accent_color = accent
+            )
+            self.tray_icon.setIcon(tray_icon_asset)
+            window_icon_asset = self._generate_state_icon(
+                mic_fill_color = fill_hex, mic_stroke_color=stroke_hex, size = 96, accent_color = accent
+            )
+            self.setWindowIcon(window_icon_asset)
+
+        #print(f"DEBUG: Recording = {is_recording}, EngineAtive={is_engine_active}")

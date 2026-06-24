@@ -5,6 +5,7 @@ from typing import NamedTuple
 class EngineType(str, Enum):
     DEEP_FILTER = "DeepFilterNet (Studio Engine)"
     STFT = "STFT NoiseReduce (Low Latency)"
+    STFT_DF = "STFT + DeepFilter (Best of both worlds)"
 
 
 class ProfileKey(str, Enum):
@@ -13,11 +14,21 @@ class ProfileKey(str, Enum):
     P3 = "p3"
     C1 = "c1"
     C2 = "c2"
+    C3 = "c3"
+    C4 = "c4"
     CUSTOM_1 = "Custom 1"
     CUSTOM_2 = "Custom 2"
+    CUSTOM_3 = "Custom 3"
+    CUSTOM_4 = "Custom 4"
 
 
 PRESET_MAP = {
+    ProfileKey.P1: {"name": "◈ Heavy Fan Noise", "vals": [5, 98, 21, 100, 650]},
+    ProfileKey.P2: {"name": "◈ Office Chatter", "vals": [4, 94, 17, 80, 500]},
+    ProfileKey.P3: {"name": "◈ Keyboard Typing", "vals": [3, 96, 25, 40, 300]},
+}
+
+SDF_PRESET_MAP = {
     ProfileKey.P1: {"name": "◈ Heavy Fan Noise", "vals": [5, 98, 21, 100, 650]},
     ProfileKey.P2: {"name": "◈ Office Chatter", "vals": [4, 94, 17, 80, 500]},
     ProfileKey.P3: {"name": "◈ Keyboard Typing", "vals": [3, 96, 25, 40, 300]},
@@ -27,12 +38,14 @@ DEFAULT_CUSTOM_VALUES = [4, 95, 20, 90, 400]
 PROFILE_NAME_PREFIX = "◈ "
 
 CORE_PRESETS = (ProfileKey.P1, ProfileKey.P2, ProfileKey.P3)
-CUSTOM_SLOTS = (ProfileKey.CUSTOM_1, ProfileKey.CUSTOM_2)
-CUSTOM_UI_PROFILES = (ProfileKey.C1, ProfileKey.C2)
+CUSTOM_SLOTS = (ProfileKey.CUSTOM_1, ProfileKey.CUSTOM_2, ProfileKey.CUSTOM_3, ProfileKey.CUSTOM_4)
+CUSTOM_UI_PROFILES = (ProfileKey.C1, ProfileKey.C2, ProfileKey.C3, ProfileKey.C4)
 
 UI_PROFILE_TO_SLOT = {
     ProfileKey.C1: ProfileKey.CUSTOM_1,
     ProfileKey.C2: ProfileKey.CUSTOM_2,
+    ProfileKey.C3: ProfileKey.CUSTOM_3,
+    ProfileKey.C4: ProfileKey.CUSTOM_4,
 }
 
 SLOT_TO_UI_PROFILE = {slot: ui for ui, slot in UI_PROFILE_TO_SLOT.items()}

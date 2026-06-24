@@ -159,6 +159,18 @@ ENGAGE_PANEL_QSS = """
     }
 """
 
+SVG_TEMPLATE = """
+<svg fill="#000000" viewBox="2 2 20 20" id="mic" data-name="Line Color" xmlns="http://www.w3.org/2000/svg" class="icon line-color">
+    <g transform="rotate(-45 12 12)">
+        <path id="secondary" d="M18.24,16A8,8,0,0,1,5.76,16" style="fill: none; stroke: {accent_color}; stroke-linecap: round; stroke-linejoin: round; stroke-width:1.5;"></path>
+        <line id="secondary-2" data-name="secondary" x1="12" y1="19" x2="12" y2="21" style="fill: none; stroke: {accent_color}; stroke-linecap: round; stroke-linejoin: round; stroke-width:1.5;"></line>
+        <path id="primary" d="M12,15h0a4,4,0,0,1-4-4V7a4,4,0,0,1,4-4h0a4,4,0,0,1,4,4v4A4,4,0,0,1,12,15Z" style="fill: {mic_fill}; stroke: {mic_stroke}; stroke-linecap: round; stroke-linejoin: round; stroke-width:1.5;"></path>
+    </g>
+</svg>
+"""
+
+APP_ICON_PATH = "assets/your_icon.png"
+
 def build_main_stylesheet() -> str:
     return """
         QMainWindow { background-color: #0E0F14; border: 1px solid #2A2D3D;}

@@ -1,1 +1,1 @@
-{"Custom 1": {"name": "\u25c8 Empty Slot 1", "values": [4, 95, 20, 90, 400], "is_empty": true}, "Custom 2": {"name": "\u25c8 Empty Slot 2", "values": [4, 95, 20, 90, 400], "is_empty": true}}
+{"Custom 1": {"name": "\u25c8 LessAggressiveOnVoice", "values": [5, 88, 21, 180, 650], "is_empty": false}, "Custom 2": {"name": "\u25c8 Empty Slot 2", "values": [4, 95, 20, 90, 400], "is_empty": true}}

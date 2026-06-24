@@ -46,6 +46,7 @@ def main():
     logging.info("Starting CleanMic application...")
 
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
 
     window = CleanMicGUI()
     window.show()
