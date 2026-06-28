@@ -30,6 +30,7 @@ from constants import (
     ENGINE_TUNING_ATTRS, ENGINE_TUNING_SCALE,FFT_SMOOTHING_BEFORE, 
     FFT_SMOOTHING_AFTER,PEAK_HOLD_FRAMES, PEAK_DECAY_RATE, METER_MIN_DB, 
     METER_MAX_DB, BOTTOM_BAR_HEIGHT, DRAWER_GAP, DF_PRESET_MAP,
+    SDF_PRESET_MAP, SDF_CUSTOM_SLOTS, SDF_CUSTOM_UI_PROFILES,
 )
 from dialogs import CopyDialog, CopyFromDialog, SaveProfileDialog
 from profiles import (
@@ -198,6 +199,8 @@ class CleanMicGUI(QMainWindow):
         existing = [
             strip_profile_prefix(self.custom_profiles[ProfileKey.CUSTOM_1].name),
             strip_profile_prefix(self.custom_profiles[ProfileKey.CUSTOM_2].name),
+            strip_profile_prefix(self.custom_profiles[ProfileKey.CUSTOM_3].name),
+            strip_profile_prefix(self.custom_profiles[ProfileKey.CUSTOM_4].name),
         ]
         if base_name not in existing:
             return base_name
@@ -210,6 +213,8 @@ class CleanMicGUI(QMainWindow):
         return {
             ProfileKey.CUSTOM_1: (self.slot1_widget, self.btn_c1),
             ProfileKey.CUSTOM_2: (self.slot2_widget, self.btn_c2),
+            ProfileKey.CUSTOM_3: (self.slot3_widget, self.btn_c3),
+            ProfileKey.CUSTOM_4: (self.slot4_widget, self.btn_c4),
         }
 
     def _update_custom_slot_ui(self, slot_key: ProfileKey) -> None:
@@ -335,7 +340,12 @@ class CleanMicGUI(QMainWindow):
         engine_layout = QVBoxLayout()
 
         self.engine_select = QComboBox()
-        self.engine_select.addItems([EngineType.DEEP_FILTER, EngineType.STFT])
+        self.engine_select.addItems([
+            EngineType.DEEP_FILTER, 
+            EngineType.STFT, 
+            EngineType.RNN, 
+            #EngineType.STFT_DF
+            ])
         self.engine_select.currentTextChanged.connect(self.handle_engine_swap)
         engine_layout.addWidget(self.engine_select)
 
@@ -376,7 +386,17 @@ class CleanMicGUI(QMainWindow):
         self.btn_c1 = self.slot1_widget.btn_main
         self.btn_c2 = self.slot2_widget.btn_main
 
-        for btn, ui_profile in [(self.btn_c1, ProfileKey.C1), (self.btn_c2, ProfileKey.C2)]:
+        slot3 = self.custom_profiles[ProfileKey.CUSTOM_3]
+        slot4 = self.custom_profiles[ProfileKey.CUSTOM_4]
+        self.slot3_widget = ProfileSlotWidget(slot3.name, slot3.is_empty)
+        self.slot4_widget = ProfileSlotWidget(slot4.name, slot4.is_empty)
+        self.btn_c3 = self.slot3_widget.btn_main
+        self.btn_c4 = self.slot4_widget.btn_main
+
+        for btn, ui_profile in [
+            (self.btn_c1, ProfileKey.C1), (self.btn_c2, ProfileKey.C2), 
+            (self.btn_c3, ProfileKey.C3), (self.btn_c4, ProfileKey.C4)
+            ]:
             btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             btn.customContextMenuRequested.connect(
                 lambda pos, b=btn, k=ui_profile: self._show_context_menu(pos, b, k)
@@ -392,11 +412,25 @@ class CleanMicGUI(QMainWindow):
                 ProfileKey.C2, self.custom_profiles[ProfileKey.CUSTOM_2].values, True, self.btn_c2
             )
         )
+        self.btn_c3.clicked.connect(
+            lambda: self.apply_preset(
+                ProfileKey.C3, self.custom_profiles[ProfileKey.CUSTOM_3].values, True, self.btn_c3
+            )
+        )
+        self.btn_c4.clicked.connect(
+            lambda: self.apply_preset(
+                ProfileKey.C4, self.custom_profiles[ProfileKey.CUSTOM_4].values, True, self.btn_c4
+            )
+        )
         self.slot1_widget.btn_trash.clicked.connect(lambda: self._delete_custom(ProfileKey.CUSTOM_1))
         self.slot2_widget.btn_trash.clicked.connect(lambda: self._delete_custom(ProfileKey.CUSTOM_2))
+        self.slot3_widget.btn_trash.clicked.connect(lambda: self._delete_custom(ProfileKey.CUSTOM_3))
+        self.slot4_widget.btn_trash.clicked.connect(lambda: self._delete_custom(ProfileKey.CUSTOM_4))
 
         engine_layout.addWidget(self.slot1_widget)
         engine_layout.addWidget(self.slot2_widget)
+        engine_layout.addWidget(self.slot3_widget)
+        engine_layout.addWidget(self.slot4_widget)
 
         self.df1_widget = ProfileSlotWidget("Full Suppression", show_trash=False)
         self.df2_widget = ProfileSlotWidget("Voice Safe", show_trash=False)
@@ -414,6 +448,24 @@ class CleanMicGUI(QMainWindow):
         self.df_placeholder2.setEnabled(False)
         self.df_placeholder2.setVisible(False)
 
+        self.rnn_placeholder3 = QFrame()
+        self.rnn_placeholder3.setObjectName("profile_slot")
+        self.rnn_placeholder3.setFixedHeight(38)
+        self.rnn_placeholder3.setEnabled(False)
+        self.rnn_placeholder3.setVisible(False)
+
+        self.rnn_placeholder4 = QFrame()
+        self.rnn_placeholder4.setObjectName("profile_slot")
+        self.rnn_placeholder4.setFixedHeight(38)
+        self.rnn_placeholder4.setEnabled(False)
+        self.rnn_placeholder4.setVisible(False)
+
+        self.rnn_placeholder5 = QFrame()
+        self.rnn_placeholder5.setObjectName("profile_slot")
+        self.rnn_placeholder5.setFixedHeight(38)
+        self.rnn_placeholder5.setEnabled(False)
+        self.rnn_placeholder5.setVisible(False)
+
         self.btn_df1 = self.df1_widget.btn_main
         self.btn_df2 = self.df2_widget.btn_main
         self.btn_df3 = self.df3_widget.btn_main
@@ -425,11 +477,16 @@ class CleanMicGUI(QMainWindow):
         for w in [self.df1_widget, self.df2_widget, self.df3_widget, self.df_placeholder1, self.df_placeholder2]:
             w.setVisible(False)
             engine_layout.addWidget(w)
+        for w in [self.rnn_placeholder3, self.rnn_placeholder4, self.rnn_placeholder5]:
+            w.setVisible(False)
+            engine_layout.addWidget(w)
 
         # Adding to protech the height of the buttons (extra security measure)
         all_profile_buttons = [
             self.p1_widget, self.p2_widget, self.p3_widget, self.slot1_widget, self.slot2_widget,
-            self.df1_widget, self.df2_widget, self.df3_widget, self.df_placeholder1, self.df_placeholder2
+            self.slot3_widget, self.slot4_widget, self.df1_widget, self.df2_widget, self.df3_widget, 
+            self.df_placeholder1, self.df_placeholder2, self.rnn_placeholder3, self.rnn_placeholder4,
+            self.rnn_placeholder5
         ]
 
         for w in all_profile_buttons:
@@ -844,6 +901,10 @@ class CleanMicGUI(QMainWindow):
         # Lazy import: DeepFilterNet pulls in PyTorch; STFT engine is lighter.
         if selected_text == EngineType.DEEP_FILTER:
             from engine_deepfilter import AudioEngine
+        elif selected_text == EngineType.STFT_DF:
+            from engine_stft_df import AudioEngine
+        elif selected_text == EngineType.RNN:
+            from engine_rnnoise import AudioEngine
         else:
             from engine import AudioEngine
 
@@ -864,6 +925,14 @@ class CleanMicGUI(QMainWindow):
 
         if selected_text == EngineType.STFT:
             self.btn_p1.click()
+        elif selected_text == EngineType.STFT_DF:
+            self.btn_p1.click()
+        elif selected_text == EngineType.RNN:
+            self.btn_df1.click()
+            if self.drawer.isVisible():
+                self.drawer.hide()
+                self.btn_toggle_drawer.setChecked(False)
+                self.btn_toggle_drawer.setText("▼ Advanced Tuning")
         else:
             self.btn_df1.click()
             if self.drawer.isVisible():
@@ -907,9 +976,11 @@ class CleanMicGUI(QMainWindow):
             self.p3_widget.set_active(btn_ref == self.btn_p3)
             self.slot1_widget.set_active(btn_ref == self.btn_c1)
             self.slot2_widget.set_active(btn_ref == self.btn_c2)
+            self.slot3_widget.set_active(btn_ref == self.btn_c3)
+            self.slot4_widget.set_active(btn_ref == self.btn_c4)
 
         if auto_open:
-            if self.engine_select.currentText() == EngineType.STFT:
+            if self.engine_select.currentText() in (EngineType.STFT, EngineType.STFT_DF):
                 self.drawer.sync_position()
                 self.drawer.show()
                 self.btn_toggle_drawer.setChecked(True)
@@ -935,21 +1006,33 @@ class CleanMicGUI(QMainWindow):
             self.engine.atten_lim_db = DF_PRESET_MAP[key]["atten_lim_db"]
 
     def _evaluate_ui_states(self) -> None:
-        is_stft = self.engine_select.currentText() == EngineType.STFT
+        is_stft = self.engine_select.currentText() in (EngineType.STFT, EngineType.STFT_DF)
+        is_sdf = self.engine_select.currentText() == EngineType.STFT_DF
+        is_rnn = self.engine_select.currentText() == EngineType.RNN
         is_engaged = self.master_btn.isChecked()
         is_custom = is_custom_ui_profile(self.active_profile_type)
 
         for widget in [self.p1_widget, self.p2_widget, self.p3_widget]:
             widget.setEnabled(is_stft and not is_engaged)
-        self.slot1_widget.setEnabled(is_stft and not is_engaged)
-        self.slot2_widget.setEnabled(is_stft and not is_engaged)
+        self.slot1_widget.setEnabled(is_stft and not is_engaged and not is_sdf)
+        self.slot2_widget.setEnabled(is_stft and not is_engaged and not is_sdf)
+        self.slot3_widget.setEnabled(is_sdf and not is_engaged)
+        self.slot4_widget.setEnabled(is_sdf and not is_engaged)
         self.btn_toggle_drawer.setEnabled(True)
 
         for w in [self.p1_widget, self.p2_widget, self.p3_widget, self.slot1_widget, self.slot2_widget]:
             w.setVisible(is_stft)
+        self.slot1_widget.setVisible(is_stft and not is_sdf)
+        self.slot2_widget.setVisible(is_stft and not is_sdf)
+        self.slot3_widget.setVisible(is_sdf)
+        self.slot4_widget.setVisible(is_sdf)
         for w in [self.df1_widget, self.df2_widget, self.df3_widget]:
-            w.setVisible(not is_stft)
-            w.setEnabled(not is_engaged)
+            w.setVisible(not is_stft and not is_rnn)
+            w.setEnabled(not is_engaged and not is_rnn)
+        for w in [self.df_placeholder1, self.df_placeholder2]:
+            w.setVisible(not is_stft and not is_rnn)
+        for w in [self.rnn_placeholder3, self.rnn_placeholder4, self.rnn_placeholder5]:
+            w.setVisible(is_rnn)
         for w in [self.df_placeholder1, self.df_placeholder2]:
             w.setVisible(not is_stft)
 
@@ -999,7 +1082,7 @@ class CleanMicGUI(QMainWindow):
             self.btn_toggle_drawer.setText("▲ Advanced Tuning")
 
     def _start_calibration_overlay(self) -> None:
-        is_stft = self.engine_select.currentText() == EngineType.STFT
+        is_stft = self.engine_select.currentText() in (EngineType.STFT, EngineType.STFT_DF)
         if not is_stft:
             return
         self._calibration_countdown = int(self.engine.scan_time_seconds)
@@ -1036,7 +1119,7 @@ class CleanMicGUI(QMainWindow):
         self._evaluate_ui_states()
         if checked:
             self.smoothed_fft_after = None
-            if self.engine_select.currentText() == EngineType.STFT:
+            if self.engine_select.currentText() in (EngineType.STFT, EngineType.STFT_DF):
                 self.engine.start_calibration(self.engine.scan_time_seconds)
             self._start_calibration_overlay()
             self.master_btn.setText("ACTIVE (SUPPRESSING)")
@@ -1157,7 +1240,7 @@ class CleanMicGUI(QMainWindow):
         self.fft_curve_before.setData(freqs, self.smoothed_fft_before)
 
         # After curve — only when engaged and calibration done
-        is_stft = self.engine_select.currentText() == EngineType.STFT
+        is_stft = self.engine_select.currentText() in (EngineType.STFT, EngineType.STFT_DF)
         calibration_done = (not is_stft) or getattr(self.engine, "calibration_complete", False)
 
         if self.master_btn.isChecked() and calibration_done:

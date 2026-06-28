@@ -1,98 +1,96 @@
-import sounddevice as sd
+import logging
 import numpy as np
-import queue
-import scipy.io.wavfile as wavfile
-from pyrnnoise import RNNoise
+from base_engine import BaseAudioEngine
+import importlib.util
+import sys
+import os
 
-class AudioEngine:
+if getattr(sys, 'frozen', False):
+    _pyrnnoise_path = os.path.join(sys._MEIPASS, 'pyrnnoise', 'rnnoise.py')
+else:
+    _pyrnnoise_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        'venv', 'Lib', 'site-packages', 'pyrnnoise', 'rnnoise.py'
+    )
+
+spec = importlib.util.spec_from_file_location('rnnoise', _pyrnnoise_path)
+
+_rnnoise = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(_rnnoise)
+create = _rnnoise.create
+destroy = _rnnoise.destroy
+process_frame = _rnnoise.process_frame
+FRAME_SIZE = _rnnoise.FRAME_SIZE
+
+logger = logging.getLogger(__name__)
+
+class AudioEngine(BaseAudioEngine):
     def __init__(self):
-        self.mic_id = None
-        self.speaker_id = None
-        self.stream = None
-        self.is_running = False
-        
-        # RNNoise STRICTLY requires 48kHz and 10ms chunks (480 samples)
-        self.sample_rate = 48000
-        self.chunk_size = 480 
-        
-        # Instantiate the RNNoise AI
-        self.denoiser = RNNoise(sample_rate=self.sample_rate)
-        
-        # GUI Compatibility Variables (The AI handles this natively now, 
-        # but the GUI sliders still need these variables to exist so they don't crash)
+        super().__init__()
+        self.chunk_size = 480
+        self.denoise_state = create()
+        self._was_engaged = False
+
+        # Dummy tuning params — GUI drawer needs these to not crash
         self.scan_time_seconds = 4.0
         self.scrub_power = 0.98
         self.hunting_focus = 2.0
         self.word_fade_ms = 90
         self.voice_shield_hz = 400
-        
-        self.record_armed = False
-        self.is_recording = False
-        self.record_path = ""
-        self.record_buffer = []
-        self.visual_queue = queue.Queue(maxsize=15)
-
-    def stop_and_save_recording(self):
-        self.is_recording = False
-        self.record_armed = False
-        if self.record_buffer and self.record_path:
-            try:
-                full_audio = np.concatenate(self.record_buffer)
-                wavfile.write(self.record_path, self.sample_rate, full_audio)
-                print(f"[RNNoise] File saved: {self.record_path}")
-            except Exception as e:
-                print(f"[Error] {e}")
-        self.record_buffer = []
 
     def _audio_callback(self, indata, outdata, frames, time, status):
+        if status:
+            logger.warning("Hardware warning: %s", status)
         if not self.is_running:
             outdata.fill(0)
             return
 
-        raw_audio = indata[:, 0].copy()
+        raw = indata[:, 0].copy()
 
+        if not self.is_engaged:
+            if getattr(self, '_was_engaged', False):
+                self.reset_denoiser()
+                self._was_engaged = False
+            gained = np.clip(indata * self.output_gain, -1.0, 1.0).astype(np.float32)
+            outdata[:] = gained
+            gained_raw = gained[:, 0].copy()
+            self._write_monitor(gained_raw)
+            if self.is_recording:
+                self.record_buffer.append(gained_raw)
+            self._push_to_visual_queue(raw, gained_raw)
+            return
+
+        self._was_engaged = True
         try:
-            # RNNoise instantly processes the 10ms frame and returns a speech probability and the clean wave
-            speech_prob, clean_audio = self.denoiser.denoise_frame(raw_audio)
-            
+            clean_int16, speech_prob = process_frame(self.denoise_state, raw)
+            clean_audio = clean_int16.astype(np.float32) / 32768.0
+
+            clean_audio = self._apply_post_processing(clean_audio)
+            clean_audio *= self.output_gain
             clean_audio = np.clip(clean_audio, -1.0, 1.0)
             outdata[:] = clean_audio.reshape(-1, 1).astype(np.float32)
-            
+            self._write_monitor(clean_audio)
             if self.is_recording:
                 self.record_buffer.append(clean_audio.copy())
-            self._push_to_visual_queue(raw_audio, clean_audio)
+            self._push_to_visual_queue(raw, clean_audio)
+
         except Exception as e:
+            logger.warning("RNNoise error: %s", e)
             outdata[:] = indata
-            self._push_to_visual_queue(raw_audio, raw_audio)
+            self._write_monitor(raw)
+            if self.is_recording:
+                self.record_buffer.append(raw.copy())
+            self._push_to_visual_queue(raw, raw)
 
-    def _push_to_visual_queue(self, raw, clean):
-        if self.visual_queue.full():
-            try: self.visual_queue.get_nowait()
-            except queue.Empty: pass
-        try: self.visual_queue.put_nowait((raw, clean))
-        except queue.Full: pass
-
-    def start_stream(self):
-        self.is_running = True
-        if self.record_armed:
-            self.record_buffer = []
-            self.is_recording = True
-            
-        self.stream = sd.Stream(
-            device=(self.mic_id, self.speaker_id),
-            samplerate=self.sample_rate,
-            channels=1,
-            blocksize=self.chunk_size,
-            dtype=np.float32,
-            callback=self._audio_callback
-        )
-        self.stream.start()
-
-    def stop_stream(self):
-        self.is_running = False
-        if self.is_recording:
-            self.stop_and_save_recording()
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
-            self.stream = None
+    def start_stream(self) -> None:
+        self.reset_denoiser()
+        super().start_stream()
+    
+    def __del__(self):
+        if hasattr(self, 'denoise_state') and self.denoise_state:
+            destroy(self.denoise_state)
+    
+    def reset_denoiser(self):
+        if hasattr(self, 'denoise_state') and self.denoise_state:
+            destroy(self.denoise_state)
+        self.denoise_state = create()

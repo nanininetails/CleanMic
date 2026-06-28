@@ -22,6 +22,8 @@ a = Analysis(
         ('dialogs.py', '.'),
         (r'C:\Users\Nani\AppData\Local\DeepFilterNet\DeepFilterNet\Cache\DeepFilterNet3', 'DeepFilterNet3'),
         *df_datas,
+        ('venv/Lib/site-packages/pyrnnoise/rnnoise.py', 'pyrnnoise'),
+        ('venv/Lib/site-packages/pyrnnoise/librnnoise.dll', 'pyrnnoise'),  # Windows
     ],
     hiddenimports=[
         *df_hidden,

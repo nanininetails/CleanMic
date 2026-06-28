@@ -3,9 +3,10 @@ from typing import NamedTuple
 
 
 class EngineType(str, Enum):
-    DEEP_FILTER = "DeepFilterNet (Studio Engine)"
-    STFT = "STFT NoiseReduce (Low Latency)"
-    STFT_DF = "STFT + DeepFilter (Best of both worlds)"
+    DEEP_FILTER = "DeepFilterNet (All-Purpose)"
+    STFT = "STFT NoiseReduce (Fan & Hum)"
+    STFT_DF = "STFT + DeepFilter (Beta)"
+    RNN = "RNNoise (Voice Optimized)"
 
 
 class ProfileKey(str, Enum):
@@ -39,7 +40,9 @@ PROFILE_NAME_PREFIX = "◈ "
 
 CORE_PRESETS = (ProfileKey.P1, ProfileKey.P2, ProfileKey.P3)
 CUSTOM_SLOTS = (ProfileKey.CUSTOM_1, ProfileKey.CUSTOM_2, ProfileKey.CUSTOM_3, ProfileKey.CUSTOM_4)
-CUSTOM_UI_PROFILES = (ProfileKey.C1, ProfileKey.C2, ProfileKey.C3, ProfileKey.C4)
+SDF_CUSTOM_SLOTS = (ProfileKey.CUSTOM_3, ProfileKey.CUSTOM_4)
+CUSTOM_UI_PROFILES = (ProfileKey.C1, ProfileKey.C2)
+SDF_CUSTOM_UI_PROFILES = (ProfileKey.C3, ProfileKey.C4)
 
 UI_PROFILE_TO_SLOT = {
     ProfileKey.C1: ProfileKey.CUSTOM_1,
